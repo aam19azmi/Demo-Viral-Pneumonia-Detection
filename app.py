@@ -53,7 +53,9 @@ def load_models():
         # Model 2: YOLOv8s + GWO (Model optimasi kamu)
         model_gwo = YOLO('best.pt')
         
-        return model_base, model_gwo
+        # Mengembalikan 3 nilai agar konsisten dengan except block
+        # (model1, model2, error_message)
+        return model_base, model_gwo, None
     except Exception as e:
         return None, None, str(e)
 
