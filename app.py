@@ -3,12 +3,13 @@ from ultralytics import YOLO
 from PIL import Image
 import numpy as np
 import cv2
+import io
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
-    page_title="Pneumonia Detection AI | AzmiDev",
+    page_title="YOLOv8s vs GWO | Pneumonia Detection",
     page_icon="🫁",
-    layout="centered"
+    layout="wide" # Mengubah layout menjadi wide agar komparasi lebih jelas
 )
 
 # --- STYLE CSS CUSTOM ---
@@ -23,92 +24,161 @@ st.markdown("""
         height: 3em;
         background-color: #00d2d3;
         color: white;
+        font-weight: bold;
+    }
+    h1, h2, h3 {
+        color: #00d2d3 !important;
+    }
+    .metric-card {
+        background-color: #262730;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #4e4e4e;
+        margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOAD MODEL ---
+# --- LOAD MODELS ---
 @st.cache_resource
-def load_model():
-    # Menggunakan YOLOv8s yang sudah di-tuning dengan GWO sesuai jurnal
-    return YOLO('best.pt')
+def load_models():
+    """
+    Memuat dua model sekaligus untuk komparasi.
+    Pastikan file 'yolov8s_base.pt' dan 'best.pt' ada di folder yang sama.
+    """
+    try:
+        # Model 1: YOLOv8s Standar (Ganti nama file sesuai model base kamu)
+        model_base = YOLO('yolov8s_base.pt') 
+        
+        # Model 2: YOLOv8s + GWO (Model optimasi kamu)
+        model_gwo = YOLO('best.pt')
+        
+        return model_base, model_gwo
+    except Exception as e:
+        return None, None, str(e)
 
-try:
-    model = load_model()
-except Exception as e:
-    st.error(f"Gagal memuat model 'best.pt'. Pastikan file tersedia. Error: {e}")
+# Memanggil fungsi load
+model_base, model_gwo, error_msg = load_models()
+
+# Cek error
+if error_msg:
+    st.error(f"❌ Terjadi kesalahan saat memuat model: {error_msg}")
+    st.warning("Pastikan file 'yolov8s_base.pt' (Base) dan 'best.pt' (GWO) sudah diupload ke direktori root.")
+    st.stop()
 
 # --- HEADER ---
-st.title("🫁 Pneumonia Detection AI")
-st.subheader("Implementasi YOLOv8s + GWO")
-st.info("Berdasarkan Riset Jurnal: *Interpretable Hybrid YOLOv8s-GWO Framework for Bounding-Box Viral Pneumonia Detection*")
+st.title("🫁 Komparasi Deteksi Pneumonia")
+st.subheader("YOLOv8s (Standard) vs YOLOv8s + Grey Wolf Optimizer (GWO)")
+st.markdown("Aplikasi ini mendemonstrasikan peningkatan performa deteksi objek setelah dilakukan optimasi hiperparameter menggunakan algoritma GWO.")
 
-# --- SIDEBAR INFO ---
-st.sidebar.title("Informasi Riset")
-st.sidebar.write("**Peneliti:** Azmi Jalaluddin Amron")
-st.sidebar.write("**Dataset:** Kaggle Chest X-ray Images")
-st.sidebar.write("**Model:** YOLOv8s (Small) + Grey Wolf Optimizer")
+# --- SIDEBAR ---
+st.sidebar.title("🎛️ Kontrol Panel")
+conf_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05, help="Batas minimum keyakinan AI untuk menampilkan kotak deteksi.")
+
 st.sidebar.markdown("---")
-st.sidebar.write("Demo ini bertujuan untuk mendeteksi keberadaan Pneumonia pada citra X-ray dada secara real-time.")
+st.sidebar.info(
+    """
+    **Keterangan Model:**
+    - **YOLOv8s Base:** Model standar tanpa optimasi heuristic.
+    - **YOLOv8s + GWO:** Model yang telah di-tuning menggunakan Grey Wolf Optimizer untuk akurasi lebih baik pada dataset X-Ray.
+    """
+)
+st.sidebar.caption("© 2026 AzmiDev Research")
 
 # --- UPLOAD GAMBAR ---
-uploaded_file = st.file_uploader("Pilih gambar X-Ray Dada...", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload Citra X-Ray Dada", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Tampilkan gambar asli
     image = Image.open(uploaded_file)
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("### Gambar Asli")
-        st.image(image, use_container_width=True)
+    # Tampilkan Gambar Asli di Tengah (Kecil saja untuk preview)
+    with st.expander("Lihat Gambar Asli", expanded=True):
+        st.image(image, caption="Citra X-Ray Original", width=300)
 
-    # Tombol Deteksi
-    if st.button('Mulai Analisis AI'):
-        with st.spinner('AI sedang menganalisis pola infeksi...'):
-            # Jalankan Inferensi
-            # conf=0.25 (default), sesuaikan dengan hasil training terbaikmu
-            results = model.predict(image, conf=0.40)
-            
-            # Ambil gambar hasil plotting
-            res_plotted = results[0].plot()
-            res_plotted_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
-            
-            with col2:
-                st.write("### Hasil Deteksi")
-                st.image(res_plotted_rgb, use_container_width=True)
+    # Tombol Eksekusi
+    if st.button('🚀 Mulai Komparasi AI'):
+        
+        with st.spinner('Sedang menjalankan inferensi pada kedua model...'):
+            # 1. Prediksi Model Base
+            res_base = model_base.predict(image, conf=conf_threshold)
+            img_base = res_base[0].plot()
+            img_base_rgb = cv2.cvtColor(img_base, cv2.COLOR_BGR2RGB)
+            boxes_base = res_base[0].boxes
 
-        # --- TAMPILKAN HASIL DATA ---
+            # 2. Prediksi Model GWO
+            res_gwo = model_gwo.predict(image, conf=conf_threshold)
+            img_gwo = res_gwo[0].plot()
+            img_gwo_rgb = cv2.cvtColor(img_gwo, cv2.COLOR_BGR2RGB)
+            boxes_gwo = res_gwo[0].boxes
+
+        # --- TAMPILAN HASIL SIDE-BY-SIDE ---
         st.markdown("---")
-        boxes = results[0].boxes
-        if len(boxes) > 0:
-            st.warning(f"Terdeteksi {len(boxes)} area indikasi Pneumonia.")
-            for box in boxes:
-                confidence = box.conf[0]
-                label = model.names[int(box.cls[0])]
-                st.write(f"🔍 **Label:** `{label}` | **Tingkat Keyakinan (Confidence):** `{confidence:.2%}`")
+        col1, col2 = st.columns(2)
+
+        # === KOLOM 1: YOLOv8s BASE ===
+        with col1:
+            st.markdown("<h3 style='text-align: center;'>YOLOv8s (Base)</h3>", unsafe_allow_html=True)
+            st.image(img_base_rgb, use_container_width=True)
+            
+            st.markdown(f"""
+            <div class='metric-card'>
+                <b>Deteksi:</b> {len(boxes_base)} objek<br>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if len(boxes_base) > 0:
+                for box in boxes_base:
+                    conf = box.conf[0]
+                    cls_name = model_base.names[int(box.cls[0])]
+                    st.write(f"- `{cls_name}`: **{conf:.2%}**")
+            else:
+                st.caption("Tidak ada deteksi.")
+
+        # === KOLOM 2: YOLOv8s + GWO ===
+        with col2:
+            st.markdown("<h3 style='text-align: center; color: #00d2d3;'>YOLOv8s + GWO (Optimized)</h3>", unsafe_allow_html=True)
+            st.image(img_gwo_rgb, use_container_width=True)
+            
+            st.markdown(f"""
+            <div class='metric-card' style='border-color: #00d2d3;'>
+                <b>Deteksi:</b> {len(boxes_gwo)} objek<br>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if len(boxes_gwo) > 0:
+                for box in boxes_gwo:
+                    conf = box.conf[0]
+                    cls_name = model_gwo.names[int(box.cls[0])]
+                    # Highlight hasil GWO
+                    st.success(f"🎯 `{cls_name}`: **{conf:.2%}**")
+            else:
+                st.caption("Tidak ada deteksi.")
+
+        # --- ANALISIS SINGKAT ---
+        st.markdown("---")
+        st.subheader("📝 Analisis Perbedaan")
+        
+        diff_conf = 0
+        if len(boxes_base) > 0 and len(boxes_gwo) > 0:
+            # Mengambil rata-rata confidence jika deteksi > 1, atau confidence tunggal jika 1
+            avg_base = float(boxes_base.conf.mean())
+            avg_gwo = float(boxes_gwo.conf.mean())
+            diff = avg_gwo - avg_base
+            
+            if diff > 0:
+                st.success(f"**Kesimpulan:** Model GWO memiliki rata-rata confidence **+{diff:.2%} lebih tinggi** dibandingkan model Base pada citra ini.")
+            elif diff < 0:
+                st.warning(f"**Kesimpulan:** Model Base memiliki rata-rata confidence **{abs(diff):.2%} lebih tinggi** (GWO mungkin mengurangi False Positives).")
+            else:
+                st.info("Kedua model memberikan hasil confidence yang identik.")
+        elif len(boxes_gwo) > len(boxes_base):
+             st.success("**Kesimpulan:** Model GWO berhasil mendeteksi objek yang terlewat oleh model Base (False Negative pada Base berkurang).")
+        elif len(boxes_base) > len(boxes_gwo):
+             st.info("**Kesimpulan:** Model GWO tidak mendeteksi objek yang dideteksi Base (Kemungkinan Base mendeteksi False Positive, atau GWO under-detect).")
         else:
-            st.success("Tidak ditemukan indikasi Pneumonia pada tingkat kepercayaan > 40%.")
+            st.caption("Belum cukup data untuk menyimpulkan perbedaan pada citra ini.")
 
-        # --- FITUR DOWNLOAD ---
-        # Mengubah hasil ke format yang bisa didownload
-        result_img = Image.fromarray(res_plotted_rgb)
-        st.markdown("### Simpan Hasil")
-        
-        # Simpan ke buffer memory
-        import io
-        buf = io.BytesIO()
-        result_img.save(buf, format="PNG")
-        byte_im = buf.getvalue()
-        
-        st.download_button(
-            label="Download Hasil Analisis (.png)",
-            data=byte_im,
-            file_name="hasil_deteksi_pneumonia.png",
-            mime="image/png"
-        )
-
-# --- FOOTER ---
-st.markdown("---")
-st.caption("© 2026 Azmi Jalaluddin Amron | Source Code Journal Tech. Hanya untuk tujuan demonstrasi riset.")
+else:
+    # Tampilan awal jika belum upload
+    st.info("Silakan upload gambar X-Ray untuk melihat perbandingan kinerja model sebelum dan sesudah optimasi GWO.")
+    
