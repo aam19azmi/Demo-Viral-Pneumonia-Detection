@@ -4,6 +4,7 @@ from PIL import Image
 import numpy as np
 import cv2
 import io
+import os  # Ditambahkan untuk cek file
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -43,29 +44,42 @@ st.markdown("""
 @st.cache_resource
 def load_models():
     """
-    Memuat dua model sekaligus untuk komparasi.
-    Pastikan file 'yolov8s_base.pt' dan 'best.pt' ada di folder yang sama.
+    Memuat dua model sekaligus untuk komparasi dengan error handling terpisah.
     """
+    path_base = 'yolov8s_base.pt'
+    path_gwo = 'best.pt'
+
+    # 1. Cek keberadaan file fisik
+    if not os.path.exists(path_base):
+        return None, None, f"File '{path_base}' tidak ditemukan di direktori."
+    if not os.path.exists(path_gwo):
+        return None, None, f"File '{path_gwo}' tidak ditemukan di direktori."
+
+    model_base = None
+    model_gwo = None
+
+    # 2. Coba load Model Base
     try:
-        # Model 1: YOLOv8s Standar (Ganti nama file sesuai model base kamu)
-        model_base = YOLO('yolov8s_base.pt') 
-        
-        # Model 2: YOLOv8s + GWO (Model optimasi kamu)
-        model_gwo = YOLO('best.pt')
-        
-        # Mengembalikan 3 nilai agar konsisten dengan except block
-        # (model1, model2, error_message)
-        return model_base, model_gwo, None
+        model_base = YOLO(path_base)
     except Exception as e:
-        return None, None, str(e)
+        return None, None, f"File '{path_base}' rusak/corrupt (Ran out of input). Ganti file ini. Detail: {e}"
+
+    # 3. Coba load Model GWO
+    try:
+        model_gwo = YOLO(path_gwo)
+    except Exception as e:
+        return None, None, f"File '{path_gwo}' rusak/corrupt (Ran out of input). Ganti file ini. Detail: {e}"
+        
+    return model_base, model_gwo, None
 
 # Memanggil fungsi load
 model_base, model_gwo, error_msg = load_models()
 
 # Cek error
 if error_msg:
-    st.error(f"❌ Terjadi kesalahan saat memuat model: {error_msg}")
-    st.warning("Pastikan file 'yolov8s_base.pt' (Base) dan 'best.pt' (GWO) sudah diupload ke direktori root.")
+    st.error(f"❌ Terjadi kesalahan fatal:")
+    st.error(error_msg)
+    st.warning("Tips: Error 'Ran out of input' biasanya berarti file .pt tidak terunduh sempurna. Coba copy ulang file model dari sumber aslinya.")
     st.stop()
 
 # --- HEADER ---
@@ -183,4 +197,4 @@ if uploaded_file is not None:
 else:
     # Tampilan awal jika belum upload
     st.info("Silakan upload gambar X-Ray untuk melihat perbandingan kinerja model sebelum dan sesudah optimasi GWO.")
-    
+    st.markdown("---")
